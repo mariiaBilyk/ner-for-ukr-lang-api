@@ -1,0 +1,8 @@
+Приклад {{INDEX_HERE}}:
+
+Текст:
+{{TEXT_HERE}}
+
+Очікуваний JSON:
+{{ENTITIES_HERE}}
+

@@ -1,0 +1,13 @@
+["ART",
+"DATE",
+"DOC",
+"JOB",
+"LOC",
+"MISC",
+"MON",
+"ORG",
+"PCT",
+"PERIOD",
+"PERS",
+"QUANT",
+"TIME"]
