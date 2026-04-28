@@ -1,0 +1,10 @@
+---
+name: feedback-invalid-json
+version: 1.0.0
+description: "Retry feedback: model response did not contain a valid JSON array"
+---
+
+Your previous response did not contain a valid JSON array.
+Return ONLY a JSON array where each element has exactly two fields "label" and "text".
+Example: [{"label": "PERS", "text": "Петро"}, {"label": "LOC", "text": "Київ"}]
+Do not include any explanation or additional text.

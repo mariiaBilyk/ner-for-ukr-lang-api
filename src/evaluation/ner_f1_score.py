@@ -1,6 +1,6 @@
 import json
 from sklearn.metrics import precision_recall_fscore_support
-from src.utils.normalize_entities import normalize_entities
+from utils.normalize_entities import normalize_entities
 
 def ner_f1_score(pred, true):
     """

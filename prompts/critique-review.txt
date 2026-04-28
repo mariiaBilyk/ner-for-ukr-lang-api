@@ -1,0 +1,13 @@
+---
+name: critique-review
+version: 1.0.0
+description: "Self-critique prompt: ask the model to review and correct its extracted entities"
+---
+
+You previously extracted these named entities:
+{{ENTITIES_JSON}}
+
+Review each entity against the original text above.
+Correct any errors: wrong labels, missing entities, or spurious ones.
+Return only the corrected JSON array in the same format.
+Do not include any explanation or additional text.

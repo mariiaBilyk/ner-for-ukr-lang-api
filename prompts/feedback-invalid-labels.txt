@@ -1,0 +1,10 @@
+---
+name: feedback-invalid-labels
+version: 1.0.0
+description: "Retry feedback: model response contained labels not in the allowed set"
+---
+
+Your previous response contained unknown labels: {{BAD_LABELS}}.
+Allowed labels are: ART, DATE, DOC, JOB, LOC, MISC, MON, ORG, PCT, PERIOD, PERS, QUANT, TIME.
+Repeat the extraction using only labels from that list.
+Do not include any explanation or additional text.

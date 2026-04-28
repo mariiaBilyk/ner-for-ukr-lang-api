@@ -1,2 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
 
-*.cpython-311.pyc
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+*.egg
+
+# Testing & coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Type checking
+.mypy_cache/
+.ruff_cache/
+
+# Jupyter notebooks
+.ipynb_checkpoints/
+
+# Secrets & local config
+.env
+*.env
+CLAUDE.local.md
+
+# macOS
+.DS_Store
+
+# IDEs
+.idea/
+.vscode/
+
+# MLflow (future)
+mlruns/
+
+# Data (usually large, tracked separately)
+data/
