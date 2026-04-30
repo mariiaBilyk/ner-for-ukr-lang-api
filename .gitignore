@@ -45,3 +45,4 @@ mlruns/
 
 # Data (usually large, tracked separately)
 data/
+.vscode/settings.json

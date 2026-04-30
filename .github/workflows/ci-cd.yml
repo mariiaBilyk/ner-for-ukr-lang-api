@@ -1,0 +1,134 @@
+# .github/workflows/ci-cd.yml
+#
+# Pipeline stages:
+#   1. test    — run pytest (every push and PR)
+#   2. build   — build Docker image, push to Docker Hub (main only)
+#   3. deploy  — update Azure Container App to the new image (main only)
+#
+# GitHub Secrets required (repo → Settings → Secrets → Actions → Repository secrets):
+#   DOCKERHUB_USERNAME    your Docker Hub username
+#   DOCKERHUB_TOKEN       Docker Hub access token
+#   AZURE_CREDENTIALS     service principal JSON (from deploy-azure.sh output)
+
+name: CI / CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.12"
+  # Constructed once here, available to every job.
+  # Both build and deploy use the same expression independently —
+  # no need to pass it between jobs via outputs.
+  IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/docker-ner-api
+
+jobs:
+
+  # ── Job 1: Run tests ───────────────────────────────────────────────────────
+  test:
+    name: Run pytest
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest pytest-asyncio
+
+      - name: Run tests
+        env:
+          PYTHONPATH: src
+        run: pytest tests/ -v --tb=short
+
+
+  # ── Job 2: Build & push to Docker Hub ─────────────────────────────────────
+  build:
+    name: Build & push Docker image
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          # Two tags: latest for convenience, short SHA for exact deploys.
+          # Short SHA (7 chars) is the git convention — same as `git log --oneline`.
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:sha-${{ github.sha }}
+          cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache
+          cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache,mode=max
+
+
+  # ── Job 3: Deploy to Azure Container Apps ─────────────────────────────────
+  deploy:
+    name: Deploy to Azure Container Apps
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy new image
+        run: |
+          # Reconstruct the tag here — no job outputs needed.
+          # Both jobs know DOCKERHUB_USERNAME and github.sha independently.
+          IMAGE_TAG="${{ env.IMAGE }}:sha-${{ github.sha }}"
+          echo "Deploying: ${IMAGE_TAG}"
+          az containerapp update \
+            --name ner-api \
+            --resource-group ner-rg \
+            --image "${IMAGE_TAG}"
+
+      - name: Get app URL
+        id: get_url
+        run: |
+          URL=$(az containerapp show \
+            --name ner-api \
+            --resource-group ner-rg \
+            --query "properties.configuration.ingress.fqdn" \
+            --output tsv)
+          echo "url=https://${URL}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify health
+        run: |
+          URL="${{ steps.get_url.outputs.url }}"
+          echo "Checking ${URL}/health ..."
+          for i in $(seq 1 10); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${URL}/health")
+            if [ "${STATUS}" = "200" ]; then
+              echo "Health check passed"
+              exit 0
+            fi
+            echo "Attempt ${i}/10 — status ${STATUS}, retrying in 10s..."
+            sleep 10
+          done
+          echo "Health check failed after 10 attempts"
+          exit 1

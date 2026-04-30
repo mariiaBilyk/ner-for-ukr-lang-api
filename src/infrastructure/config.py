@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     inference_backend: str = "ollama"   # ollama | huggingface | azure_ml
 
     # Ollama
-    ollama_model: str = "qwen2.5:7b-instruct-q4_K_M"
+    ollama_model: str
     ollama_host: str  = "http://localhost:11434"
 
     # HuggingFace (future)

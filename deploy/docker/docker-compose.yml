@@ -1,0 +1,125 @@
+# docker-compose.yml — local development stack
+#
+# Services:
+#   ner-api   — FastAPI app
+#   ollama    — local LLM inference engine (CPU mode)
+#
+# Usage:
+#   docker compose up --build          # first run
+#   docker compose up                  # subsequent runs
+#   docker compose down -v             # stop + remove volumes
+
+# ── Single source of truth for model name ────────────────────────────────────
+# YAML anchors (&) define a reusable block; aliases (*) paste it in.
+# This is the same principle as a shared constant — the default is written
+# once and referenced everywhere, so changing the model name means editing
+# exactly one line, not hunting through the file.
+#
+# Override at runtime without touching this file:
+#   OLLAMA_MODEL=llama3.2 docker compose up
+x-ollama-model: &ollama-model
+  OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b-instruct-q4_K_M}
+
+services:
+
+  # ── Ollama: local LLM inference ─────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+
+    # Named volume persists downloaded models between container restarts.
+    # Without this, every `docker compose down` would delete your 4GB model.
+    volumes:
+      - ollama_models:/root/.ollama
+
+    ports:
+      - "11434:11434"   # expose for debugging; ner-api uses internal DNS
+
+    # Resource limits — important on a dev machine.
+    # Ollama will use all available CPU threads without this.
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+
+    # Restart policy: restart unless explicitly stopped.
+    # Same semantics as Docker Swarm / Kubernetes RestartPolicy.
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "sh", "-c", "ollama list || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+
+  # ── Model initializer: pull model once on first start ───────────────────
+  # This is a one-shot init container pattern — same as Kubernetes initContainers.
+  # It runs `ollama pull`, then exits. The main ollama service is already running.
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: ollama-init
+    depends_on:
+      ollama:
+        condition: service_healthy
+    volumes:
+      - ollama_models:/root/.ollama
+    environment:
+      <<: *ollama-model                  # pulls OLLAMA_MODEL from the anchor above
+      OLLAMA_HOST: http://ollama:11434
+    # $OLLAMA_MODEL comes from the environment block — no hardcoded default here.
+    # $$ escapes the $ so Docker Compose doesn't treat it as a Compose variable.
+    entrypoint: sh -c "ollama pull $$OLLAMA_MODEL || true"
+    restart: "no"   # run once, don't restart
+
+
+  # ── NER API: your FastAPI application ───────────────────────────────────
+  ner-api:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: ner-api
+
+    ports:
+      - "8000:8000"
+
+    # Environment variables override .env defaults.
+    # In production you inject these from Azure Key Vault / AWS Secrets Manager.
+    environment:
+      <<: *ollama-model                  # same anchor — model name from one place
+      OLLAMA_HOST: http://ollama:11434   # internal Docker DNS name
+      INFERENCE_BACKEND: ollama
+      PROMPT_NAME: ${PROMPT_NAME:-ner}
+      PROMPT_VERSION: ${PROMPT_VERSION:-}
+      EXTRACTION_STRATEGY: ${EXTRACTION_STRATEGY:-simple}
+      NER_AGENT_MAX_ATTEMPTS: ${NER_AGENT_MAX_ATTEMPTS:-3}
+
+    depends_on:
+      ollama:
+        condition: service_healthy
+      ollama-init:
+        condition: service_completed_successfully
+
+    restart: unless-stopped
+
+    # Mount prompts as a read-only bind mount during development
+    # so you can edit prompts without rebuilding the image.
+    volumes:
+      - ../../prompts:/app/prompts:ro
+
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+
+# ── Named volumes ────────────────────────────────────────────────────────────
+# Volumes are Docker-managed storage. They survive container restarts and
+# `docker compose down` (but not `docker compose down -v`).
+volumes:
+  ollama_models:
+    name: ollama_models   # explicit name so it's not prefixed with project name

@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from api.ner_router import router
@@ -10,7 +11,7 @@ configure_logging()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    InferenceFactory.initialize(get_settings())
+    await asyncio.to_thread(InferenceFactory.initialize, get_settings())
     yield
 
 
